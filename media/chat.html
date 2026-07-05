@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 13px/1.6 -apple-system, sans-serif; padding: 12px 12px 90px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+#messages { display: flex; flex-direction: column; gap: 12px; }
+.msg { padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
+.msg.user { background: var(--vscode-textBlockQuote-background); align-self: flex-end; max-width: 85%; }
+.msg.assistant { background: var(--vscode-editor-inactiveSelectionBackground); align-self: flex-start; max-width: 100%; }
+.code-block { margin: 8px 0; border-radius: 6px; overflow: hidden; background: var(--vscode-textPreformat-background); }
+.code-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 11px; background: rgba(128,128,128,0.15); color: var(--vscode-descriptionForeground); }
+.code-header .btn-group { display: flex; gap: 4px; }
+.code-header button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; padding: 2px 7px; cursor: pointer; font-size: 11px; }
+.code-header button:hover { background: var(--vscode-button-hoverBackground); }
+.code-block pre { margin: 0; padding: 8px; overflow-x: auto; font-size: 12px; font-family: monospace; }
+#footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 12px; background: var(--vscode-editor-background); border-top: 1px solid var(--vscode-panel-border); }
+#input-row { display: flex; gap: 6px; }
+#input-row textarea { flex: 1; padding: 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px; resize: none; min-height: 36px; font: inherit; font-size: 13px; }
+#input-row textarea:focus { outline: none; border-color: var(--vscode-focusBorder); }
+#input-row .send-btn { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="messages"></div>
+<div id="footer">
+  <div id="input-row">
+    <textarea id="input" rows="2" placeholder="问个问题... (Enter 发送)"></textarea>
+    <button class="send-btn" id="send-btn">发送</button>
+  </div>
+</div>
+
+<script>
+(function(){
+try {
+  const vscode = acquireVsCodeApi();
+  const msgBox = document.getElementById('messages');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send-btn');
+  let history = window.__INITIAL_HISTORY__ || [];
+
+  function renderMsg(role, content, isStream) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    if (isStream) div.id = 'stream-msg';
+
+    if (content) {
+      // match ```lang\n...```
+      const codeBlockRe = /```(\w*)\n([\s\S]*?)```/g;
+      let lastIdx = 0;
+      let match;
+      const fragments = [];
+
+      while ((match = codeBlockRe.exec(content)) !== null) {
+        // text before code block
+        if (match.index > lastIdx) {
+          fragments.push({ t: 'text', v: content.slice(lastIdx, match.index) });
+        }
+        fragments.push({ t: 'code', lang: match[1], code: match[2] });
+        lastIdx = match.index + match[0].length;
+      }
+      if (lastIdx < content.length) {
+        fragments.push({ t: 'text', v: content.slice(lastIdx) });
+      }
+
+      for (const f of fragments) {
+        if (f.t === 'text') {
+          div.appendChild(document.createTextNode(f.v));
+        } else {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'code-block';
+          wrapper.innerHTML = '<div class="code-header"><span>' + (f.lang || 'code') +
+            '</span><div class="btn-group">' +
+            '<button class="apply-btn">\uD83D\uDCCB \u5E94\u7528</button>' +
+            '<button class="create-btn">\uD83D\uDCC1 \u65B0\u5EFA\u6587\u4EF6</button></div></div>' +
+            '<pre>' + f.code.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+
+          const lang = f.lang;
+          const code = f.code;
+          wrapper.querySelector('.apply-btn').onclick = function() {
+            vscode.postMessage({ type: 'applyCode', code: code, language: lang });
+          };
+          wrapper.querySelector('.create-btn').onclick = function() {
+            const name = prompt('文件名:');
+            if (name) vscode.postMessage({ type: 'createFile', code: code, language: lang, filename: name });
+          };
+          div.appendChild(wrapper);
+        }
+      }
+    }
+
+    msgBox.appendChild(div);
+    msgBox.scrollTop = msgBox.scrollHeight;
+    return div;
+  }
+
+  // restore history
+  for (let i = 0; i < history.length; i++) {
+    renderMsg(history[i].role, history[i].content, false);
+  }
+
+  function sendMsg() {
+    const text = input.value.trim();
+    if (!text) return;
+    renderMsg('user', text, false);
+    history.push({ role: 'user', content: text });
+    vscode.postMessage({ type: 'saveHistory', history: history.slice(-100) });
+    vscode.postMessage({ type: 'sendMessage', text: text, image: null });
+    input.value = '';
+  }
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
+  sendBtn.addEventListener('click', sendMsg);
+
+  let curStream = null;
+  let streamContent = '';
+  window.addEventListener('message', function(event) {
+    const msg = event.data;
+    if (msg.type === 'startStream') {
+      streamContent = '';
+      curStream = renderMsg('assistant', '\u200B', true); // zero-width space as placeholder
+      history.push({ role: 'assistant', content: '' });
+    } else if (msg.type === 'streamChunk' && curStream) {
+      streamContent += msg.chunk;
+      const streamDiv = document.getElementById('stream-msg');
+      if (streamDiv) {
+        // remove existing children except buttons
+        while (streamDiv.firstChild) streamDiv.removeChild(streamDiv.firstChild);
+        // simple text display during stream
+        streamDiv.textContent = streamContent;
+      }
+      msgBox.scrollTop = msgBox.scrollHeight;
+    } else if (msg.type === 'endStream') {
+      if (curStream && curStream.parentNode) {
+        curStream.parentNode.removeChild(curStream);
+      }
+      curStream = null;
+      history[history.length - 1].content = msg.content;
+      renderMsg('assistant', msg.content, false);
+      vscode.postMessage({ type: 'saveHistory', history: history.slice(-100) });
+    }
+  });
+} catch(e) {
+  document.body.innerHTML = '<div style="padding:20px;color:red">Error: ' + e.message + '</div>';
+}
+})();
+</script>
+</body>
+</html>
