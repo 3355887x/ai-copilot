@@ -1,0 +1,105 @@
+{
+  "name": "ai-copilot",
+  "displayName": "AI Copilot",
+  "description": "AI 编程助手 — 解释代码、优化建议、帮你写代码",
+  "version": "0.0.1",
+  "publisher": "mingyue",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:aiCopilot.explain",
+    "onCommand:aiCopilot.optimize",
+    "onCommand:aiCopilot.review",
+    "onCommand:aiCopilot.chat"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-copilot",
+          "title": "AI Copilot",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-copilot": [
+        {
+          "type": "webview",
+          "id": "aiCopilot.chat",
+          "name": "对话"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiCopilot.explain",
+        "title": "AI Copilot: 解释选中代码"
+      },
+      {
+        "command": "aiCopilot.optimize",
+        "title": "AI Copilot: 优化选中代码"
+      },
+      {
+        "command": "aiCopilot.review",
+        "title": "AI Copilot: 审查选中代码"
+      },
+      {
+        "command": "aiCopilot.complete",
+        "title": "AI Copilot: 自动补全"
+      },
+      {
+        "command": "aiCopilot.chat",
+        "title": "AI Copilot: 打开对话面板"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aiCopilot.explain",
+          "group": "aiCopilot@1"
+        },
+        {
+          "command": "aiCopilot.optimize",
+          "group": "aiCopilot@2"
+        },
+        {
+          "command": "aiCopilot.review",
+          "group": "aiCopilot@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Copilot",
+      "properties": {
+        "aiCopilot.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "DeepSeek API Key"
+        },
+        "aiCopilot.apiUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com/v1/chat/completions",
+          "description": "API 地址"
+        },
+        "aiCopilot.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "enum": ["deepseek-chat", "deepseek-reasoner"],
+          "description": "模型选择"
+        },
+        "aiCopilot.qwenApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "阿里云 DashScope API Key（用于图片识别）"
+        }
+      }
+    }
+  }
+}
